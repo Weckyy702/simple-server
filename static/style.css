@@ -1,0 +1,48 @@
+:root {
+    --base: #1e1e2e;
+    --text: #cdd6f4;
+    --blue: #89b4fa;
+    --sky:  #89dceb;
+}
+
+body {
+    background-color: var(--base); /* Background color */
+    color: var(--text); /* Text color */
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center; /* Horizontal centering */
+    align-items: center; /* Vertical centering */
+    min-height: 100vh; /* Ensure full viewport height */
+}
+
+.container {
+    width: 80%;
+    max-width: 600px;
+    padding: 20px;
+}
+
+h1 {
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: var(--text); /* Header text color */
+}
+
+.links {
+    display: flex;
+    justify-content: space-around;
+}
+
+a {
+    text-decoration: none;
+    color: var(--blue); /* Link color */
+    font-size: 18px;
+    transition: 0.3s;
+}
+
+a:hover {
+    color: var(--sky); /* Link color on hover */
+}
+

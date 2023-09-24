@@ -1,0 +1,206 @@
+#include <arpa/inet.h>
+#include <asm-generic/socket.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define PORT 8000
+#define REQUEST_SIZE 1024
+#define RESPONSE_SIZE 512
+#define MAX_FILES 5
+
+#define fail(msg)                                                              \
+  do {                                                                         \
+    perror(msg);                                                               \
+    exit(EXIT_FAILURE);                                                        \
+  } while (0)
+
+#define log_error(msg)                                                         \
+  do {                                                                         \
+    fputs(msg, stderr);                                                        \
+  } while (0)
+
+typedef struct {
+  size_t response_len;
+  bool in_headers;
+} Response;
+
+typedef struct {
+  const char *name;
+  char *ptr;
+  size_t len;
+} File;
+
+// FIXME: This buffer is shared by all requests so stuff breaks if we
+// multithread
+static char response_buffer[RESPONSE_SIZE] = {0};
+
+Response response_new_with_code(int code) {
+  // Put in a random reason to comply with HTTP spec. Client should ignore it
+  int len =
+      snprintf(response_buffer, RESPONSE_SIZE, "HTTP/1.1 %.3d lol\r\n", code);
+  if (len < 0) {
+    log_error("response_new_with_code: snprintf failed");
+    exit(EXIT_FAILURE);
+  }
+
+  Response r = {
+      .response_len = len,
+      .in_headers = true,
+  };
+  return r;
+}
+
+Response response_new() { return response_new_with_code(200); }
+
+void response_write(Response *r, char *str) {
+  if (r->in_headers) {
+    log_error("response_write: response is in headers mode!");
+    return;
+  }
+
+  size_t len = strlen(str);
+  if ((r->response_len + len) >= RESPONSE_SIZE) {
+    fputs("response_write: string is too long!", stderr);
+    return;
+  }
+  strncpy(response_buffer + r->response_len, str, len);
+  r->response_len += len;
+}
+
+void response_read_from_file(Response *r, int fd) {
+  if (r->in_headers) {
+    log_error("response_from_file: response is in headers mode!");
+    return;
+  }
+
+  if ((r->response_len + 2) >= RESPONSE_SIZE) {
+    log_error("response_from_file: response too large!");
+    return;
+  }
+
+  size_t to_read = RESPONSE_SIZE - r->response_len;
+  int nread = read(fd, response_buffer + r->response_len, to_read);
+  if (nread < 0) {
+    perror("response_from_file: read failed");
+    return;
+  }
+  r->response_len += nread;
+}
+
+void response_add_header(Response *r, char *key, char *value) {
+  if (!r->in_headers) {
+    log_error("Tried to add headers to response in content mode!");
+    return;
+  }
+  size_t key_len = strlen(key);
+  size_t value_len = strlen(value);
+
+  // Have to add 2 chars for key-value separator ': ' + 2 for CRLF
+  size_t header_len = key_len + value_len + 4;
+
+  if ((r->response_len + header_len) >= RESPONSE_SIZE) {
+    fputs("response_add_header: key-value pair too long!", stderr);
+    return;
+  }
+
+  if (sprintf(response_buffer + r->response_len, "%s: %s\r\n", key, value) <
+      0) {
+    fputs("response_add_header: failed to sprintf", stderr);
+  }
+  r->response_len += header_len;
+}
+
+void response_end_headers(Response *r) {
+  if (!r->in_headers) {
+    log_error("response_end_headers: Response already in content mode!");
+  }
+  r->in_headers = false;
+  response_write(r, "\r\n");
+}
+
+void handle_request(int client_socket) {
+  char buffer[REQUEST_SIZE] = {0};
+  if (read(client_socket, buffer, REQUEST_SIZE) < 0) {
+    perror("read from client");
+    return;
+  }
+
+  Response r;
+
+  int fd = open("static/index.html", O_RDONLY);
+  if (fd < 0) {
+    perror("open");
+    r = response_new_with_code(404);
+  } else {
+    r = response_new_with_code(200);
+    response_add_header(&r, "Content-Type", "text/html");
+    response_end_headers(&r);
+    response_read_from_file(&r, fd);
+  }
+
+  if (write(client_socket, response_buffer, r.response_len) < 0) {
+    perror("client write");
+  }
+}
+
+int main() {
+  int server_socket = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_socket < 0) {
+    fail("socket");
+  }
+
+  int option = 1;
+  if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                 &option, sizeof(option)) < 0) {
+    fail("setsockopt");
+  }
+
+  puts("Socket created");
+
+  struct sockaddr_in server_addr = {0};
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = htons(PORT);
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind(server_socket, (struct sockaddr *)&server_addr,
+           sizeof(server_addr)) < 0) {
+    fail("bind");
+  }
+
+  puts("Socket bound");
+
+  if (listen(server_socket, 5) < 0) {
+    fail("listen");
+  }
+
+  printf("Server listening on port %d\n", PORT);
+
+  for (;;) {
+    struct sockaddr_in client_addr;
+    socklen_t client_size = sizeof(client_addr);
+
+    int client_socket =
+        accept(server_socket, (struct sockaddr *)&client_addr, &client_size);
+
+    if (client_socket < 0) {
+      fail("accept");
+    }
+
+    puts("Got new connection :)");
+
+    handle_request(client_socket);
+    close(client_socket);
+  }
+
+  close(server_socket);
+
+  return EXIT_SUCCESS;
+}
