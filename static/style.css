@@ -26,13 +26,39 @@ body {
 
 h1 {
     font-size: 24px;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
     color: var(--text); /* Header text color */
 }
 
+.main-heading {
+    border: 1px red;
+    overflow: hidden;
+    white-space: nowrap;
+    margin: 0 auto;
+    letter-spacing: .15em;
+    animation: typing 2.5s steps(40, end);
+}
+
+.main-heading::after {
+    content: '█';
+    animation: blink-caret 2s ease-in-out infinite
+}
+
+@keyframes typing {
+    from { width: 0 }
+    to { width: 100% }
+}
+
+@keyframes blink-caret {
+    from, to { opacity: 0% }
+    50% { opacity: 100% }
+}
+
 .links {
-    display: flex;
-    justify-content: space-around;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, 100px);
+    justify-content: center;
+    align-content: center;
 }
 
 a {
