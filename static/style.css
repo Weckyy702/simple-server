@@ -55,10 +55,14 @@ h1 {
 }
 
 .links {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, 100px);
-    justify-content: center;
-    align-content: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.links > a {
+    flex: 1;
+    min-width: max-content;
 }
 
 a {
